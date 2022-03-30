@@ -688,7 +688,7 @@ func main(cmd *cobra.Command, args []string) error {
 	config := AtlantisConfig{
 		Version:       3,
 		AutoMerge:     autoMerge,
-		ParallelPlan:  parallel,
+		ParallelPlan:  parallel || parallelPlan,
 		ParallelApply: parallel,
 	}
 	if oldConfig != nil && preserveWorkflows {
@@ -793,6 +793,16 @@ func main(cmd *cobra.Command, args []string) error {
 	// Sort the projects in config by Dir
 	sort.Slice(config.Projects, func(i, j int) bool { return config.Projects[i].Dir < config.Projects[j].Dir })
 
+	// Sort projects by their dependencies for correct order to execute in Atlantis
+	sort.Slice(config.Projects, func(i, j int) bool {
+		for _, dep := range config.Projects[j].Autoplan.WhenModified {
+			if config.Projects[i].Dir == filepath.Dir(filepath.Join(config.Projects[j].Dir, dep)) {
+				return true
+			}
+		}
+		return false
+	})
+
 	// Convert config to YAML string
 	yamlBytes, err := yaml.Marshal(&config)
 	if err != nil {
@@ -823,6 +833,7 @@ var ignoreParentTerragrunt bool
 var createParentProject bool
 var ignoreDependencyBlocks bool
 var parallel bool
+var parallelPlan bool
 var createWorkspace bool
 var createProjectName bool
 var defaultTerraformVersion string
@@ -861,6 +872,7 @@ func init() {
 	generateCmd.PersistentFlags().BoolVar(&createParentProject, "create-parent-project", false, "Create a project for the parent terragrunt configs (those which don't reference a terraform module). Default is disabled")
 	generateCmd.PersistentFlags().BoolVar(&ignoreDependencyBlocks, "ignore-dependency-blocks", false, "When true, dependencies found in `dependency` blocks will be ignored")
 	generateCmd.PersistentFlags().BoolVar(&parallel, "parallel", true, "Enables plans and applys to happen in parallel. Default is enabled")
+	generateCmd.PersistentFlags().BoolVar(&parallelPlan, "parallel-plan", false, "Enables plans to happen in parallel. Default is disabled")
 	generateCmd.PersistentFlags().BoolVar(&createWorkspace, "create-workspace", false, "Use different workspace for each project. Default is use default workspace")
 	generateCmd.PersistentFlags().BoolVar(&createProjectName, "create-project-name", false, "Add different name for each project. Default is false")
 	generateCmd.PersistentFlags().BoolVar(&preserveWorkflows, "preserve-workflows", true, "Preserves workflows from old output files. Default is true")

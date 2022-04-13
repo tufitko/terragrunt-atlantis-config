@@ -51,7 +51,8 @@ type AtlantisProject struct {
 	TerraformVersion string `json:"terraform_version,omitempty"`
 
 	// We only want to output `apply_requirements` if explicitly stated in a local value
-	ApplyRequirements *[]string `json:"apply_requirements,omitempty"`
+	ApplyRequirements   *[]string `json:"apply_requirements,omitempty"`
+	ExecutionOrderGroup int       `json:"execution_order_group"`
 }
 
 // Autoplan settings for which plans affect other plans

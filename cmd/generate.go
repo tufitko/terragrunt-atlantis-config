@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"fmt"
+	"github.com/gruntwork-io/terragrunt/configstack"
 	"regexp"
 	"sort"
 
@@ -793,14 +795,59 @@ func main(cmd *cobra.Command, args []string) error {
 	// Sort the projects in config by Dir
 	sort.Slice(config.Projects, func(i, j int) bool { return config.Projects[i].Dir < config.Projects[j].Dir })
 
+	terragruntOptions, err := options.NewTerragruntOptions(gitRoot)
+	if err != nil {
+		return err
+	}
+	terragruntOptions.RunTerragrunt = cli.RunTerragrunt
+	terragruntOptions.Env = getEnvs()
+
+	stack, err := configstack.FindStackInSubfolders(terragruntOptions)
+	if err != nil {
+		return err
+	}
+
+	for _, mod := range stack.Modules {
+		mod.Path, err = filepath.Rel(gitRoot, mod.Path)
+		if err != nil {
+			return err
+		}
+	}
+
+	orderGroups := make(map[string]int)
+	for len(orderGroups) != len(config.Projects) {
+		hasChanges := false
+	Modules:
+		for _, mod := range stack.Modules {
+			maxGroup := 0
+			for _, dep := range mod.Dependencies {
+				if group, ok := orderGroups[dep.Path]; ok {
+					if maxGroup < group+1 {
+						maxGroup = group + 1
+					}
+				} else {
+					continue Modules
+				}
+			}
+			orderGroups[mod.Path] = maxGroup
+			hasChanges = true
+		}
+		if !hasChanges {
+			break
+		}
+	}
+
+	for i := range config.Projects {
+		group, ok := orderGroups[config.Projects[i].Dir]
+		if !ok {
+			return fmt.Errorf("not found order group for '%s'", config.Projects[i].Dir)
+		}
+		config.Projects[i].ExecutionOrderGroup = group
+	}
+
 	// Sort projects by their dependencies for correct order to execute in Atlantis
 	sort.Slice(config.Projects, func(i, j int) bool {
-		for _, dep := range config.Projects[j].Autoplan.WhenModified {
-			if config.Projects[i].Dir == filepath.Dir(filepath.Join(config.Projects[j].Dir, dep)) {
-				return true
-			}
-		}
-		return false
+		return config.Projects[i].ExecutionOrderGroup < config.Projects[j].ExecutionOrderGroup
 	})
 
 	// Convert config to YAML string

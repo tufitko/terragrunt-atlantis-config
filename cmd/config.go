@@ -22,6 +22,8 @@ type AtlantisConfig struct {
 	// If Atlantis should allow applies to occur in parallel
 	ParallelApply bool `json:"parallel_apply"`
 
+	LockAllProjectsBeforeExec *bool `json:"lock_all_projects_before_exec,omitempty"`
+
 	// The project settings
 	Projects []AtlantisProject `json:"projects,omitempty"`
 

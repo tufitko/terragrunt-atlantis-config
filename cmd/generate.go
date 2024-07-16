@@ -696,6 +696,9 @@ func main(cmd *cobra.Command, args []string) error {
 	if oldConfig != nil && preserveProjects {
 		config.Projects = oldConfig.Projects
 	}
+	if oldConfig != nil {
+		config.LockAllProjectsBeforeExec = oldConfig.LockAllProjectsBeforeExec
+	}
 
 	lock := sync.Mutex{}
 	ctx := context.Background()

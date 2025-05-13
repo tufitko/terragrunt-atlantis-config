@@ -97,7 +97,7 @@ func mergeResolvedLocals(parent ResolvedLocals, child ResolvedLocals) ResolvedLo
 
 	parent.ExtraAtlantisDependencies = append(parent.ExtraAtlantisDependencies, child.ExtraAtlantisDependencies...)
 
-	if child.SilencePRComments != nil || len(child.SilencePRComments) > 0 {
+	if child.SilencePRComments != nil {
 		parent.SilencePRComments = child.SilencePRComments
 	}
 

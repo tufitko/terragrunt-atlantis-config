@@ -258,6 +258,7 @@ func getDependencies(path string, terragruntOptions *options.TerragruntOptions) 
 
 			depPath := dep
 			terrOpts, _ := options.NewTerragruntOptionsWithConfigPath(depPath)
+			terrOpts.FetchDependencyOutputFromState = true
 			terrOpts.OriginalTerragruntConfigPath = terragruntOptions.OriginalTerragruntConfigPath
 			terrOpts.Env = terragruntOptions.Env
 			childDeps, err := getDependencies(depPath, terrOpts)
@@ -323,6 +324,7 @@ func createProject(sourcePath string) (*AtlantisProject, error) {
 		return nil, err
 	}
 	options.OriginalTerragruntConfigPath = sourcePath
+	options.FetchDependencyOutputFromState = true
 	options.Env = getEnvs()
 
 	dependencies, err := getDependencies(sourcePath, options)
@@ -442,6 +444,7 @@ func createHclProject(sourcePaths []string, workingDir string, projectHcl string
 		return nil, err
 	}
 	projectHclOptions.Env = getEnvs()
+	projectHclOptions.FetchDependencyOutputFromState = true
 
 	locals, err := parseLocals(projectHclFile, projectHclOptions, nil)
 	if err != nil {
@@ -498,6 +501,7 @@ func createHclProject(sourcePaths []string, workingDir string, projectHcl string
 			return nil, err
 		}
 		options.Env = getEnvs()
+		options.FetchDependencyOutputFromState = true
 
 		dependencies, err := getDependencies(sourcePath, options)
 		if err != nil {
@@ -577,6 +581,7 @@ func getAllTerragruntFiles(path string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	options.FetchDependencyOutputFromState = true
 
 	// If filterPaths is provided, override workingPath instead of gitRoot
 	// We do this here because we want to keep the relative path structure of Terragrunt files

@@ -1,8 +1,12 @@
-module github.com/transcend-io/terragrunt-atlantis-config
+module github.com/tufitko/terragrunt-atlantis-config
 
 go 1.21
 
 toolchain go1.21.3
+
+require github.com/transcend-io/terragrunt-atlantis-config v1.20.0
+
+replace github.com/transcend-io/terragrunt-atlantis-config => github.com/tufitko/terragrunt-atlantis-config use-fetch-dependency-from-s3-flag
 
 require (
 	github.com/ghodss/yaml v1.0.1-0.20190212211648-25d852aebe32

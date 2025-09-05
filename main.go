@@ -1,6 +1,11 @@
 package main
 
-import "github.com/tufitko/terragrunt-atlantis-config/cmd"
+import (
+	"os"
+	"runtime/trace"
+
+	"github.com/tufitko/terragrunt-atlantis-config/cmd"
+)
 
 // This variable is set at build time using -ldflags parameters.
 // But we still set a default here for those using plain `go get` downloads
@@ -8,5 +13,13 @@ import "github.com/tufitko/terragrunt-atlantis-config/cmd"
 var VERSION string = "1.20.0"
 
 func main() {
+	f2, err := os.Create("/tmp/trace.prof")
+	if err != nil {
+		panic(err)
+	}
+
+	trace.Start(f2)
+	defer trace.Stop()
+
 	cmd.Execute(VERSION)
 }

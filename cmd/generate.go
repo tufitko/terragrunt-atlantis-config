@@ -259,6 +259,7 @@ func getDependencies(path string, terragruntOptions *options.TerragruntOptions) 
 			depPath := dep
 			terrOpts, _ := options.NewTerragruntOptionsWithConfigPath(depPath)
 			terrOpts.OriginalTerragruntConfigPath = terragruntOptions.OriginalTerragruntConfigPath
+			terrOpts.FetchDependencyOutputFromState = true
 			terrOpts.Env = terragruntOptions.Env
 			childDeps, err := getDependencies(depPath, terrOpts)
 			if err != nil {
@@ -323,6 +324,7 @@ func createProject(sourcePath string) (*AtlantisProject, error) {
 		return nil, err
 	}
 	options.OriginalTerragruntConfigPath = sourcePath
+	options.FetchDependencyOutputFromState = true
 	options.Env = getEnvs()
 
 	dependencies, err := getDependencies(sourcePath, options)
@@ -397,11 +399,20 @@ func createProject(sourcePath string) (*AtlantisProject, error) {
 		terraformVersion = locals.TerraformVersion
 	}
 
+	sliencePRComments := defaultSilencePRComments
+	if len(defaultSilencePRComments) == 0 {
+		sliencePRComments = nil
+	}
+	if locals.SilencePRComments != nil {
+		sliencePRComments = locals.SilencePRComments
+	}
+
 	project := &AtlantisProject{
 		Dir:               filepath.ToSlash(relativeSourceDir),
 		Workflow:          workflow,
 		TerraformVersion:  terraformVersion,
 		ApplyRequirements: applyRequirements,
+		SilencePRComments: sliencePRComments,
 		Autoplan: AutoplanConfig{
 			Enabled:      resolvedAutoPlan,
 			WhenModified: uniqueStrings(relativeDependencies),
@@ -425,6 +436,12 @@ func createProject(sourcePath string) (*AtlantisProject, error) {
 		project.Workspace = projectName
 	}
 
+	if defaultRepoLocks != "" {
+		project.RepoLocks = &RepoLocksConfig{
+			Mode: defaultRepoLocks,
+		}
+	}
+
 	return project, nil
 }
 
@@ -435,6 +452,8 @@ func createHclProject(sourcePaths []string, workingDir string, projectHcl string
 	applyRequirements := &defaultApplyRequirements
 	resolvedAutoPlan := autoPlan
 	terraformVersion := defaultTerraformVersion
+	silencePRComments := defaultSilencePRComments
+	repoLocks := defaultRepoLocks
 
 	projectHclFile := filepath.Join(workingDir, projectHcl)
 	projectHclOptions, err := options.NewTerragruntOptionsWithConfigPath(workingDir)
@@ -442,6 +461,7 @@ func createHclProject(sourcePaths []string, workingDir string, projectHcl string
 		return nil, err
 	}
 	projectHclOptions.Env = getEnvs()
+	projectHclOptions.FetchDependencyOutputFromState = true
 
 	locals, err := parseLocals(projectHclFile, projectHclOptions, nil)
 	if err != nil {
@@ -491,6 +511,13 @@ func createHclProject(sourcePaths []string, workingDir string, projectHcl string
 		terraformVersion = locals.TerraformVersion
 	}
 
+	if len(defaultSilencePRComments) == 0 {
+		silencePRComments = nil
+	}
+	if locals.SilencePRComments != nil {
+		silencePRComments = locals.SilencePRComments
+	}
+
 	// build dependencies for terragrunt childs in directories below project hcl file
 	for _, sourcePath := range sourcePaths {
 		options, err := options.NewTerragruntOptionsWithConfigPath(sourcePath)
@@ -498,6 +525,7 @@ func createHclProject(sourcePaths []string, workingDir string, projectHcl string
 			return nil, err
 		}
 		options.Env = getEnvs()
+		options.FetchDependencyOutputFromState = true
 
 		dependencies, err := getDependencies(sourcePath, options)
 		if err != nil {
@@ -545,6 +573,7 @@ func createHclProject(sourcePaths []string, workingDir string, projectHcl string
 		Workflow:          workflow,
 		TerraformVersion:  terraformVersion,
 		ApplyRequirements: applyRequirements,
+		SilencePRComments: silencePRComments,
 		Autoplan: AutoplanConfig{
 			Enabled:      resolvedAutoPlan,
 			WhenModified: uniqueStrings(append(childDependencies, projectHclDependencies...)),
@@ -568,6 +597,12 @@ func createHclProject(sourcePaths []string, workingDir string, projectHcl string
 		project.Workspace = projectName
 	}
 
+	if repoLocks != "" {
+		project.RepoLocks = &RepoLocksConfig{
+			Mode: repoLocks,
+		}
+	}
+
 	return project, nil
 }
 
@@ -577,6 +612,7 @@ func getAllTerragruntFiles(path string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	options.FetchDependencyOutputFromState = true
 
 	// If filterPaths is provided, override workingPath instead of gitRoot
 	// We do this here because we want to keep the relative path structure of Terragrunt files
@@ -927,6 +963,8 @@ var createHclProjectExternalChilds bool
 var useProjectMarkers bool
 var executionOrderGroups bool
 var dependsOn bool
+var defaultSilencePRComments []string
+var defaultRepoLocks string
 
 // generateCmd represents the generate command
 var generateCmd = &cobra.Command{
@@ -975,6 +1013,8 @@ func init() {
 	generateCmd.PersistentFlags().BoolVar(&useProjectMarkers, "use-project-markers", false, "Creates Atlantis projects only for project hcl files with locals: atlantis_project = true")
 	generateCmd.PersistentFlags().BoolVar(&executionOrderGroups, "execution-order-groups", false, "Computes execution_order_groups for projects")
 	generateCmd.PersistentFlags().BoolVar(&dependsOn, "depends-on", false, "Computes depends_on for projects. Requires --create-project-name.")
+	generateCmd.PersistentFlags().StringSliceVar(&defaultSilencePRComments, "silence-pr-comments", []string{}, "Silence PR comments for the given projects in plan/apply command. Default is to not silence any comments")
+	generateCmd.PersistentFlags().StringVar(&defaultRepoLocks, "repo-locks", "", "Get a repository lock for projects on plan or apply. Default is on_plan. Possible values: on_plan, on_apply, disabled")
 }
 
 // Runs a set of arguments, returning the output

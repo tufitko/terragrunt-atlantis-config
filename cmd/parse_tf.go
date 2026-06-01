@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/gruntwork-io/terragrunt/util"
@@ -26,6 +28,14 @@ func parseTerraformLocalModuleSource(path string) ([]string, error) {
 	for _, mc := range module.ModuleCalls {
 		if isLocalTerraformModuleSource(mc.Source) {
 			modulePath := util.JoinPath(path, mc.Source)
+
+			// if modulePath is a symlink, dereference it to its real target
+			if resolved, err := resolveSymlink(modulePath); err != nil {
+				return nil, err
+			} else {
+				modulePath = resolved
+			}
+
 			modulePathGlob := util.JoinPath(modulePath, "*.tf*")
 
 			if _, exists := sourceMap[modulePathGlob]; exists {
@@ -51,6 +61,25 @@ func parseTerraformLocalModuleSource(path string) ([]string, error) {
 	}
 
 	return sources, nil
+}
+
+// resolveSymlink returns the real target of path if it is a symlink,
+// otherwise it returns path unchanged. A non-existent path is also
+// returned unchanged.
+func resolveSymlink(path string) (string, error) {
+	info, err := os.Lstat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return path, nil
+		}
+		return "", err
+	}
+
+	if info.Mode()&os.ModeSymlink == 0 {
+		return path, nil
+	}
+
+	return filepath.EvalSymlinks(path)
 }
 
 func isLocalTerraformModuleSource(raw string) bool {

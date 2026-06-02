@@ -1,9 +1,10 @@
 package cmd
 
 import (
-	"github.com/gruntwork-io/terragrunt/util"
 	"regexp"
 	"sort"
+
+	"github.com/gruntwork-io/terragrunt/util"
 
 	"github.com/hashicorp/go-getter"
 	log "github.com/sirupsen/logrus"
@@ -11,6 +12,7 @@ import (
 	"github.com/ghodss/yaml"
 	"github.com/gruntwork-io/terragrunt/config"
 	"github.com/gruntwork-io/terragrunt/options"
+	tglog "github.com/gruntwork-io/terragrunt/pkg/log"
 	"github.com/spf13/cobra"
 
 	"golang.org/x/sync/errgroup"
@@ -262,6 +264,10 @@ func getDependencies(ctx *config.ParsingContext, path string) ([]string, error) 
 			terrOpts, _ := options.NewTerragruntOptionsWithConfigPath(depPath)
 			terrOpts.OriginalTerragruntConfigPath = ctx.TerragruntOptions.OriginalTerragruntConfigPath
 			terrOpts.Env = ctx.TerragruntOptions.Env
+			terrOpts.SkipOutput = true
+			terrOpts.StrictControls = []string{"skip-dependencies-inputs"}
+			terrOpts.TerraformCliArgs = []string{"render-json"}
+			terrOpts.Logger.SetOptions(tglog.WithLevel(tglog.ErrorLevel))
 			terrContext := config.NewParsingContext(ctx, terrOpts)
 			childDeps, err := getDependencies(terrContext, depPath)
 			if err != nil {
@@ -327,7 +333,10 @@ func createProject(ctx context.Context, sourcePath string) (*AtlantisProject, er
 	}
 	options.OriginalTerragruntConfigPath = sourcePath
 	options.Env = getEnvs()
-
+	options.SkipOutput = true
+	options.StrictControls = []string{"skip-dependencies-inputs"}
+	options.TerraformCliArgs = []string{"render-json"}
+	options.Logger.SetOptions(tglog.WithLevel(tglog.ErrorLevel))
 	parsingContext := config.NewParsingContext(ctx, options)
 	dependencies, err := getDependencies(parsingContext, sourcePath)
 	if err != nil {
@@ -462,7 +471,10 @@ func createHclProject(ctx context.Context, sourcePaths []string, workingDir stri
 		return nil, err
 	}
 	projectHclOptions.Env = getEnvs()
-
+	projectHclOptions.SkipOutput = true
+	projectHclOptions.StrictControls = []string{"skip-dependencies-inputs"}
+	projectHclOptions.TerraformCliArgs = []string{"render-json"}
+	projectHclOptions.Logger.SetOptions(tglog.WithLevel(tglog.ErrorLevel))
 	parsingContext := config.NewParsingContext(ctx, projectHclOptions)
 	locals, err := parseLocals(parsingContext, projectHclFile, nil)
 	if err != nil {
@@ -526,6 +538,10 @@ func createHclProject(ctx context.Context, sourcePaths []string, workingDir stri
 			return nil, err
 		}
 		opt.Env = getEnvs()
+		opt.SkipOutput = true
+		opt.StrictControls = []string{"skip-dependencies-inputs"}
+		opt.TerraformCliArgs = []string{"render-json"}
+		opt.Logger.SetOptions(tglog.WithLevel(tglog.ErrorLevel))
 		parsingContext := config.NewParsingContext(ctx, opt)
 		dependencies, err := getDependencies(parsingContext, sourcePath)
 		if err != nil {
@@ -681,7 +697,19 @@ func FindConfigFilesInPath(rootPath string, opts *options.TerragruntOptions) ([]
 			}
 
 			if !util.IsDir(configFile) && util.FileExists(configFile) {
-				configFiles = append(configFiles, configFile)
+				// Skip root.hcl if this directory also has a normal terragrunt config
+				// (terragrunt.hcl[.json]); otherwise the same Dir would be emitted as two
+				// projects, producing duplicate projects with the same Dir.
+				hasTerragruntConfig := false
+				for _, name := range config.DefaultTerragruntConfigPaths {
+					if util.FileExists(util.JoinPath(path, name)) {
+						hasTerragruntConfig = true
+						break
+					}
+				}
+				if !hasTerragruntConfig {
+					configFiles = append(configFiles, configFile)
+				}
 				break
 			}
 		}

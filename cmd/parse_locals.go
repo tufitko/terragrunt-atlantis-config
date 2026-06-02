@@ -7,12 +7,14 @@ package cmd
 import (
 	"fmt"
 	"path/filepath"
+	"sync"
 
 	"github.com/gruntwork-io/go-commons/errors"
 	"github.com/gruntwork-io/terragrunt/config"
 	"github.com/gruntwork-io/terragrunt/config/hclparse"
 	"github.com/hashicorp/hcl/v2"
 	"github.com/zclconf/go-cty/cty"
+	"golang.org/x/sync/singleflight"
 )
 
 // ResolvedLocals are the parsed result of local values this module cares about
@@ -104,8 +106,79 @@ func mergeResolvedLocals(parent ResolvedLocals, child ResolvedLocals) ResolvedLo
 	return parent
 }
 
-// Parses a given file, returning a map of all it's `local` values
+// Set up a cache for the parseLocals function. The same parent config files
+// (root.hcl, region.hcl, _commons/*.hcl, ...) are included by many projects, and
+// resolving their locals via DecodeBaseBlocks is one of the most expensive steps.
+// Without this cache each shared parent gets re-parsed once per descendant project.
+type parseLocalsOutput struct {
+	locals ResolvedLocals
+	err    error
+}
+
+type parseLocalsCache struct {
+	mtx  sync.RWMutex
+	data map[string]parseLocalsOutput
+}
+
+func newParseLocalsCache() *parseLocalsCache {
+	return &parseLocalsCache{data: map[string]parseLocalsOutput{}}
+}
+
+func (m *parseLocalsCache) get(k string) (parseLocalsOutput, bool) {
+	m.mtx.RLock()
+	defer m.mtx.RUnlock()
+	v, ok := m.data[k]
+	return v, ok
+}
+
+func (m *parseLocalsCache) set(k string, v parseLocalsOutput) {
+	m.mtx.Lock()
+	defer m.mtx.Unlock()
+	m.data[k] = v
+}
+
+var getParseLocalsCache = newParseLocalsCache()
+var parseLocalsRequestGroup singleflight.Group
+
+// Parses a given file, returning a map of all it's `local` values.
+//
+// Only top-level resolutions (includeFromChild == nil) are memoized. A parent
+// config's locals can depend on the including child (e.g. via
+// path_relative_to_include() or get_terragrunt_dir()), so caching parent-level
+// calls keyed only by the parent path would return results from the wrong child.
+// The top-level call for a given project path is, however, deterministic and is
+// performed at least twice per project (once in getDependencies and once in
+// createProject), so caching it removes that duplicated work.
 func parseLocals(ctx *config.ParsingContext, path string, includeFromChild *config.IncludeConfig) (ResolvedLocals, error) {
+	if includeFromChild != nil {
+		return parseLocalsUncached(ctx, path, includeFromChild)
+	}
+
+	if cached, ok := getParseLocalsCache.get(path); ok {
+		return cached.locals, cached.err
+	}
+
+	res, err, _ := parseLocalsRequestGroup.Do(path, func() (interface{}, error) {
+		// Re-check the cache: a concurrent caller may have populated it while we
+		// were waiting to enter the singleflight critical section.
+		if cached, ok := getParseLocalsCache.get(path); ok {
+			return cached.locals, cached.err
+		}
+
+		locals, err := parseLocalsUncached(ctx, path, includeFromChild)
+		getParseLocalsCache.set(path, parseLocalsOutput{locals: locals, err: err})
+		return locals, err
+	})
+
+	if err != nil {
+		return ResolvedLocals{}, err
+	}
+	return res.(ResolvedLocals), nil
+}
+
+// parseLocalsUncached does the actual work of resolving a config file's locals,
+// following Terragrunt's own evaluation of `locals` blocks and parent includes.
+func parseLocalsUncached(ctx *config.ParsingContext, path string, includeFromChild *config.IncludeConfig) (ResolvedLocals, error) {
 	file, err := hclparse.NewParser(ctx.ParserOptions...).ParseFromFile(path)
 	if err != nil {
 		return ResolvedLocals{}, err

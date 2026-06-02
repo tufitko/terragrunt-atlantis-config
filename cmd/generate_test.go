@@ -23,6 +23,8 @@ func resetForRun() error {
 	// reset caches
 	getDependenciesCache = newGetDependenciesCache()
 	requestGroup = singleflight.Group{}
+	getParseLocalsCache = newParseLocalsCache()
+	parseLocalsRequestGroup = singleflight.Group{}
 	// reset flags
 	gitRoot = pwd
 	autoPlan = false

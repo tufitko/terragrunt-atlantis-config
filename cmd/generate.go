@@ -252,8 +252,13 @@ func getDependencies(ctx *config.ParsingContext, path string) ([]string, error) 
 
 		// Recurse to find dependencies of all dependencies
 		cascadedDeps := []string{}
+		// Track membership of cascadedDeps so the duplicate check below is O(1)
+		// instead of scanning the whole slice for every cascaded child dependency
+		// (which is O(n^2) on large dependency graphs).
+		cascadedDepsSeen := map[string]bool{}
 		for _, dep := range nonEmptyDeps {
 			cascadedDeps = append(cascadedDeps, dep)
+			cascadedDepsSeen[dep] = true
 
 			// The "cascading" feature is protected by a flag
 			if !cascadeDependencies {
@@ -289,15 +294,9 @@ func getDependencies(ctx *config.ParsingContext, path string) ([]string, error) 
 				childDepAbsPath = filepath.ToSlash(childDepAbsPath)
 
 				// Ensure we are not adding a duplicate dependency
-				alreadyExists := false
-				for _, dep := range cascadedDeps {
-					if dep == childDepAbsPath {
-						alreadyExists = true
-						break
-					}
-				}
-				if !alreadyExists {
+				if !cascadedDepsSeen[childDepAbsPath] {
 					cascadedDeps = append(cascadedDeps, childDepAbsPath)
+					cascadedDepsSeen[childDepAbsPath] = true
 				}
 			}
 		}
